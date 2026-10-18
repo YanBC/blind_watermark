@@ -171,6 +171,22 @@ WaterMark(..., processes=None)
 ```
 - `processes` number of processes, can be integer. Default `None`, which means using all processes.  
 
+
+# Web app (Vercel)
+
+`app.py` is a FastAPI app that serves a browser UI (`web/`) plus `POST /api/embed` and `POST /api/extract`.
+Vercel deploys it with zero configuration: import the repo as a new project and deploy. To run it locally:
+
+```bash
+pip install -r requirements.txt uvicorn
+uvicorn app:app --reload
+```
+
+The single password seeds both `password_img` and `password_wm`, so to extract in Python use
+`WaterMark(password_img=p, password_wm=p)`. Vercel limits request and response bodies to 4.5 MB, so the page
+re-encodes larger uploads as JPEG, and the API returns JPEG (quality 95) when the lossless PNG would not fit.
+Images are capped at 12.5 megapixels to stay within the function's 2 GB of memory.
+
 ## Related Project
 
 - text_blind_watermark (Embed message into text): [https://github.com/guofei9987/text_blind_watermark](https://github.com/guofei9987/text_blind_watermark)  

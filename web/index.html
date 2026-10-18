@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Blind Watermark</title>
+  <style>
+    :root {
+      --bg: #f5f5f7; --card: #ffffff; --fg: #1d1d1f; --muted: #6e6e73; --link: #0066cc;
+      --line: #d2d2d7; --field: #f5f5f7; --danger: #d70015; --ok: #248a3d;
+      --shadow: 0 2px 12px rgb(0 0 0 / 0.04), 0 18px 48px rgb(0 0 0 / 0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #000000; --card: #1c1c1e; --fg: #f5f5f7; --muted: #a1a1a6; --link: #2997ff;
+        --line: #38383a; --field: #2c2c2e; --danger: #ff453a; --ok: #30d158;
+        --shadow: 0 18px 48px rgb(0 0 0 / 0.6);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--fg);
+      font: 17px/1.47 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: clamp(56px, 12vh, 120px) 20px 96px; }
+    [hidden] { display: none !important; }
+
+    header { margin-bottom: 40px; }
+    h1 {
+      margin: 0; font-size: clamp(44px, 8vw, 72px); line-height: 1.05; font-weight: 700; letter-spacing: -0.035em;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+    .intro { margin: 16px 0 0; max-width: 34ch; font-size: clamp(19px, 2.4vw, 22px); line-height: 1.35; color: var(--muted); text-wrap: balance; }
+
+    .tabs { display: inline-flex; padding: 3px; margin-bottom: 20px; border-radius: 10px; background: var(--card); box-shadow: var(--shadow); }
+    .tabs button {
+      font: inherit; font-size: 15px; font-weight: 500; color: var(--muted); padding: 7px 22px;
+      border: 0; border-radius: 8px; background: transparent; cursor: pointer;
+    }
+    .tabs button[aria-selected="true"] { background: var(--fg); color: var(--bg); }
+
+    .card { background: var(--card); border-radius: 24px; box-shadow: var(--shadow); padding: clamp(22px, 4vw, 36px); }
+    form { display: grid; gap: 20px; }
+    .label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; }
+    .hint { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+
+    .drop {
+      display: grid; place-items: center; min-height: 180px; padding: 20px; border: 1.5px dashed var(--line);
+      border-radius: 16px; background: var(--field); text-align: center; color: var(--muted); cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .drop:hover, .drop.over { border-color: var(--link); }
+    .drop:focus-within { outline: 3px solid var(--link); outline-offset: 2px; }
+    .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .drop img { display: block; max-width: 100%; max-height: 260px; border-radius: 10px; margin: 0 auto 10px; }
+    .drop strong { color: var(--link); font-weight: 500; }
+
+    input[type="text"], input[type="number"], input[type="password"], textarea {
+      width: 100%; font: inherit; color: inherit; padding: 12px 14px; border: 1px solid transparent;
+      border-radius: 12px; background: var(--field);
+    }
+    textarea { resize: vertical; min-height: 88px; }
+    input:focus, textarea:focus { outline: none; border-color: var(--link); }
+    .row { display: grid; gap: 20px; grid-template-columns: 1fr 1fr; }
+    @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+
+    .primary {
+      justify-self: start; font: inherit; font-weight: 500; color: #fff; background: #0071e3;
+      border: 0; border-radius: 980px; padding: 11px 26px; cursor: pointer;
+    }
+    .primary:hover { background: #0077ed; }
+    .primary:disabled { opacity: 0.5; cursor: default; }
+    .primary:focus-visible, .tabs button:focus-visible { outline: 3px solid var(--link); outline-offset: 3px; }
+
+    .status { margin: 0; font-size: 15px; color: var(--muted); }
+    .status.error { color: var(--danger); }
+
+    .result { margin-top: 28px; padding-top: 28px; border-top: 1px solid var(--line); }
+    .result h2 { margin: 0 0 14px; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+    .result img { display: block; width: 100%; max-height: 420px; object-fit: contain; border-radius: 14px; background: var(--field); }
+    .keep { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; margin: 18px 0; font-size: 15px; }
+    .keep dt { color: var(--muted); }
+    .keep dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; }
+    .link-btn { font: inherit; color: var(--link); background: none; border: 0; padding: 0; cursor: pointer; }
+    .link-btn:hover { text-decoration: underline; }
+    a.primary { text-decoration: none; }
+    .extracted { margin: 0; padding: 18px 20px; border-radius: 14px; background: var(--field); font-size: 20px; white-space: pre-wrap; word-break: break-word; }
+    code { font: 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
+    .cli { margin: 16px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--field); overflow-x: auto; white-space: nowrap; color: var(--muted); }
+
+    footer { margin-top: 56px; font-size: 12px; color: var(--muted); }
+    footer a { color: inherit; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Blind Watermark.</h1>
+      <p class="intro">Hide text inside an image, invisibly. Recover it later with the password.</p>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="Mode">
+      <button type="button" role="tab" id="tab-embed" aria-controls="panel-embed" aria-selected="true">Embed</button>
+      <button type="button" role="tab" id="tab-extract" aria-controls="panel-extract" aria-selected="false">Extract</button>
+    </div>
+
+    <section class="card" id="panel-embed" role="tabpanel" aria-labelledby="tab-embed">
+      <form id="embed-form">
+        <div>
+          <span class="label">Image</span>
+          <label class="drop">
+            <input type="file" name="image" accept="image/*" required>
+            <span class="drop-text">Drop an image here, or <strong>choose a file</strong></span>
+          </label>
+        </div>
+        <div>
+          <label class="label" for="embed-text">Watermark text</label>
+          <textarea id="embed-text" name="text" maxlength="2000" required placeholder="© 2026 Your Name"></textarea>
+        </div>
+        <div class="row">
+          <div>
+            <label class="label" for="embed-password">Password</label>
+            <input id="embed-password" name="password" type="number" inputmode="numeric" min="0" max="4294967295" step="1" required placeholder="e.g. 20260418">
+            <p class="hint">A whole number. You need it to extract.</p>
+          </div>
+        </div>
+        <button class="primary" type="submit">Embed watermark</button>
+        <p class="status" role="status" aria-live="polite"></p>
+      </form>
+
+      <div class="result" id="embed-result" hidden>
+        <h2>Done.</h2>
+        <img id="embed-preview" alt="Watermarked image">
+        <dl class="keep">
+          <dt>Bit length</dt><dd id="embed-bits"></dd>
+          <dt>Password</dt><dd id="embed-pw"></dd>
+        </dl>
+        <p class="hint">Keep both. Extraction needs the bit length and the same password.</p>
+        <div class="actions" style="margin-top: 18px">
+          <a class="primary" id="embed-download" download>Download</a>
+          <button class="link-btn" type="button" id="embed-try">Try extracting ›</button>
+        </div>
+        <p class="cli"><code id="embed-code"></code></p>
+      </div>
+    </section>
+
+    <section class="card" id="panel-extract" role="tabpanel" aria-labelledby="tab-extract" hidden>
+      <form id="extract-form">
+        <div>
+          <span class="label">Watermarked image</span>
+          <label class="drop">
+            <input type="file" name="image" accept="image/*" required>
+            <span class="drop-text">Drop an image here, or <strong>choose a file</strong></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <label class="label" for="extract-bits">Bit length</label>
+            <input id="extract-bits" name="bits" type="number" min="1" step="1" required>
+          </div>
+          <div>
+            <label class="label" for="extract-password">Password</label>
+            <input id="extract-password" name="password" type="number" inputmode="numeric" min="0" max="4294967295" step="1" required>
+          </div>
+        </div>
+        <button class="primary" type="submit">Extract watermark</button>
+        <p class="status" role="status" aria-live="polite"></p>
+      </form>
+
+      <div class="result" id="extract-result" hidden>
+        <h2>Hidden text</h2>
+        <p class="extracted" id="extract-text"></p>
+        <p class="hint">A wrong password or bit length gives garbled text rather than an error.</p>
+      </div>
+    </section>
+
+    <footer>
+      Built on <a href="https://github.com/guofei9987/blind_watermark">blind_watermark</a>.
+      Images are processed in memory and never stored.
+    </footer>
+  </main>
+
+  <script>
+    // Vercel Functions accept request bodies up to 4.5 MB; the server caps images at 12.5 MP.
+    const MAX_UPLOAD = 4.3e6;
+    const MAX_PIXELS = 12.5e6;
+    const files = new Map();   // form -> selected File (from the picker or a drop)
+    let lastEmbed = null;      // { file, bits, password, password_wm } for "Try extracting"
+
+    // Tabs
+    const tabs = [...document.querySelectorAll('[role="tab"]')];
+    function selectTab(tab) {
+      for (const t of tabs) {
+        const on = t === tab;
+        t.setAttribute('aria-selected', on);
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+      }
+    }
+    tabs.forEach((t, i) => {
+      t.addEventListener('click', () => selectTab(t));
+      t.addEventListener('keydown', e => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+        selectTab(next); next.focus();
+      });
+    });
+
+    // Drop zones
+    function setFile(form, file) {
+      files.set(form, file);
+      const drop = form.querySelector('.drop');
+      drop.querySelector('img')?.remove();
+      const img = document.createElement('img');
+      img.alt = '';
+      img.src = URL.createObjectURL(file);
+      drop.prepend(img);
+      drop.querySelector('.drop-text').innerHTML = '';
+      drop.querySelector('.drop-text').append(file.name, ' · ', Object.assign(document.createElement('strong'), { textContent: 'change' }));
+    }
+    for (const form of document.querySelectorAll('form')) {
+      const drop = form.querySelector('.drop');
+      const input = drop.querySelector('input');
+      input.addEventListener('change', () => input.files[0] && setFile(form, input.files[0]));
+      drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+      drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+      drop.addEventListener('drop', e => {
+        e.preventDefault(); drop.classList.remove('over');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) { setFile(form, file); input.required = false; }
+      });
+    }
+
+    // Re-encode as JPEG at full resolution when the file is over the upload limit.
+    async function fitForUpload(file) {
+      const bmp = await createImageBitmap(file);
+      if (bmp.width * bmp.height > MAX_PIXELS) {
+        throw new Error(`Image is ${(bmp.width * bmp.height / 1e6).toFixed(1)} MP; keep it under ${MAX_PIXELS / 1e6} MP.`);
+      }
+      if (file.size <= MAX_UPLOAD) return { blob: file, note: '' };
+      const canvas = document.createElement('canvas');
+      canvas.width = bmp.width; canvas.height = bmp.height;
+      canvas.getContext('2d').drawImage(bmp, 0, 0);
+      for (const q of [0.95, 0.92, 0.88]) {
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
+        if (blob && blob.size <= MAX_UPLOAD) return { blob, note: ' (compressed to fit the 4.5 MB upload limit)' };
+      }
+      throw new Error('Image is too large to upload, even compressed. Try a smaller one.');
+    }
+
+    async function post(path, fields) {
+      const body = new FormData();
+      for (const [k, v] of Object.entries(fields)) body.append(k, v);
+      const res = await fetch(path, { method: 'POST', body });   // relative: works under a subpath too
+      if (!res.ok) {
+        let msg = `Request failed (${res.status}).`;
+        try {
+          const err = await res.json();
+          if (typeof err.detail === 'string') msg = err.detail;
+          else if (Array.isArray(err.detail)) msg = 'Check the form: ' + err.detail.map(d => d.loc.at(-1)).join(', ') + '.';
+        } catch {}
+        if (res.status === 413 && msg.startsWith('Request failed')) msg = 'Image is too large to upload.';
+        if (res.status === 504) msg = 'Timed out. Try a smaller image.';
+        throw new Error(msg);
+      }
+      return res;
+    }
+
+    function run(form, work) {
+      form.addEventListener('submit', async e => {
+        e.preventDefault();
+        const status = form.querySelector('.status');
+        const button = form.querySelector('button[type="submit"]');
+        const file = files.get(form);
+        if (!file) { status.className = 'status error'; status.textContent = 'Choose an image first.'; return; }
+        button.disabled = true;
+        status.className = 'status';
+        status.textContent = 'Working… large images take a few seconds.';
+        try {
+          status.textContent = await work(file) || '';
+        } catch (err) {
+          status.className = 'status error';
+          status.textContent = err.message || String(err);
+        } finally {
+          button.disabled = false;
+        }
+      });
+    }
+
+    const embedForm = document.getElementById('embed-form');
+    const extractForm = document.getElementById('extract-form');
+    let downloadUrl = null;
+
+    run(embedForm, async file => {
+      const { blob, note } = await fitForUpload(file);
+      const password = embedForm.password.value;
+      const res = await post('api/embed', { image: blob, text: embedForm.text.value, password });
+      const bits = res.headers.get('X-Watermark-Bits');
+      const ext = res.headers.get('X-Image-Format') || 'png';
+      const out = await res.blob();
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      downloadUrl = URL.createObjectURL(out);
+      const name = file.name.replace(/\.[^.]+$/, '') + '-watermarked.' + ext;
+
+      document.getElementById('embed-preview').src = downloadUrl;
+      document.getElementById('embed-bits').textContent = bits;
+      document.getElementById('embed-pw').textContent = password;
+      const dl = document.getElementById('embed-download');
+      dl.href = downloadUrl; dl.download = name;
+      document.getElementById('embed-code').textContent =
+        `WaterMark(password_img=${password}, password_wm=${password}).extract('${name}', wm_shape=${bits}, mode='str')`;
+      document.getElementById('embed-result').hidden = false;
+      lastEmbed = { file: new File([out], name, { type: out.type }), bits, password };
+      return `Embedded ${bits} bits as ${ext.toUpperCase()}${note}.`;
+    });
+
+    document.getElementById('embed-try').addEventListener('click', () => {
+      if (!lastEmbed) return;
+      setFile(extractForm, lastEmbed.file);
+      extractForm.image.required = false;
+      extractForm.bits.value = lastEmbed.bits;
+      extractForm.password.value = lastEmbed.password;
+      selectTab(document.getElementById('tab-extract'));
+      document.getElementById('tab-extract').focus();
+    });
+
+    run(extractForm, async file => {
+      const { blob, note } = await fitForUpload(file);
+      const res = await post('api/extract', {
+        image: blob, bits: extractForm.bits.value, password: extractForm.password.value,
+      });
+      const { text } = await res.json();
+      document.getElementById('extract-text').textContent = text;
+      document.getElementById('extract-result').hidden = false;
+      return note ? `Extracted${note}.` : '';
+    });
+  </script>
+</body>
+</html>

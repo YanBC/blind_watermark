@@ -1,4 +1,7 @@
 numpy>=1.17.0
-opencv-python
+opencv-python-headless
 setuptools
 PyWavelets
+# Web app (app.py)
+fastapi
+python-multipart
