@@ -5,18 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>Blind Watermark</title>
+  <script>
+    // Apply a saved theme before first paint; without one, the page follows the system setting.
+    try {
+      const theme = localStorage.getItem('theme');
+      if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+    } catch {}
+  </script>
   <style>
     :root {
       --bg: #f5f5f7; --card: #ffffff; --fg: #1d1d1f; --muted: #6e6e73; --link: #0066cc;
       --line: #d2d2d7; --field: #f5f5f7; --danger: #d70015; --ok: #248a3d;
       --shadow: 0 2px 12px rgb(0 0 0 / 0.04), 0 18px 48px rgb(0 0 0 / 0.08);
+      color-scheme: light dark;
     }
     @media (prefers-color-scheme: dark) {
-      :root {
+      :root:not([data-theme="light"]) {
         --bg: #000000; --card: #1c1c1e; --fg: #f5f5f7; --muted: #a1a1a6; --link: #2997ff;
         --line: #38383a; --field: #2c2c2e; --danger: #ff453a; --ok: #30d158;
         --shadow: 0 18px 48px rgb(0 0 0 / 0.6);
       }
+    }
+    /* A chosen theme overrides the system one; color-scheme keeps native controls (spinners, scrollbars) in step. */
+    :root[data-theme="light"] { color-scheme: light; }
+    :root[data-theme="dark"] {
+      --bg: #000000; --card: #1c1c1e; --fg: #f5f5f7; --muted: #a1a1a6; --link: #2997ff;
+      --line: #38383a; --field: #2c2c2e; --danger: #ff453a; --ok: #30d158;
+      --shadow: 0 18px 48px rgb(0 0 0 / 0.6);
+      color-scheme: dark;
     }
     * { box-sizing: border-box; }
     body {
@@ -24,7 +40,15 @@
       font: 17px/1.47 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
-    main { max-width: 720px; margin: 0 auto; padding: clamp(56px, 12vh, 120px) 20px 96px; }
+    main { position: relative; max-width: 720px; margin: 0 auto; padding: clamp(56px, 12vh, 120px) 20px 96px; }
+
+    .theme { position: absolute; top: 16px; right: 20px; display: inline-flex; padding: 2px; border-radius: 8px; background: var(--card); box-shadow: var(--shadow); }
+    .theme button {
+      font: inherit; font-size: 12px; font-weight: 500; color: var(--muted); padding: 4px 10px;
+      border: 0; border-radius: 6px; background: transparent; cursor: pointer;
+    }
+    .theme button[aria-pressed="true"] { background: var(--field); color: var(--fg); }
+    .theme button:focus-visible { outline: 3px solid var(--link); outline-offset: 2px; }
     [hidden] { display: none !important; }
 
     header { margin-bottom: 40px; }
@@ -97,6 +121,12 @@
 </head>
 <body>
   <main>
+    <div class="theme" role="group" aria-label="Appearance">
+      <button type="button" data-theme="auto">Auto</button>
+      <button type="button" data-theme="light">Light</button>
+      <button type="button" data-theme="dark">Dark</button>
+    </div>
+
     <header>
       <h1>Blind Watermark.</h1>
       <p class="intro">Hide text inside an image, invisibly. Recover it later with the password.</p>
@@ -189,6 +219,26 @@
     const MAX_PIXELS = 12.5e6;
     const files = new Map();   // form -> selected File (from the picker or a drop)
     let lastEmbed = null;      // { file, bits, password, password_wm } for "Try extracting"
+
+    // Theme: "auto" clears the override so the page follows the system setting.
+    const themeButtons = [...document.querySelectorAll('.theme button')];
+    function showTheme() {
+      const current = document.documentElement.dataset.theme || 'auto';
+      for (const b of themeButtons) b.setAttribute('aria-pressed', b.dataset.theme === current);
+    }
+    for (const b of themeButtons) {
+      b.addEventListener('click', () => {
+        const theme = b.dataset.theme;
+        if (theme === 'auto') delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = theme;
+        try {
+          if (theme === 'auto') localStorage.removeItem('theme');
+          else localStorage.setItem('theme', theme);
+        } catch {}
+        showTheme();
+      });
+    }
+    showTheme();
 
     // Tabs
     const tabs = [...document.querySelectorAll('[role="tab"]')];
