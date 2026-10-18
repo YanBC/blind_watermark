@@ -267,7 +267,8 @@
     async function post(path, fields) {
       const body = new FormData();
       for (const [k, v] of Object.entries(fields)) body.append(k, v);
-      const res = await fetch(path, { method: 'POST', body });   // relative: works under a subpath too
+      // Relative, so it works under a subpath; the trailing slash skips a redirect on trailingSlash hosts.
+      const res = await fetch(path, { method: 'POST', body });
       if (!res.ok) {
         let msg = `Request failed (${res.status}).`;
         try {
@@ -310,7 +311,7 @@
     run(embedForm, async file => {
       const { blob, note } = await fitForUpload(file, { resize: true });
       const password = embedForm.password.value;
-      const res = await post('api/embed', { image: blob, text: embedForm.text.value, password });
+      const res = await post('api/embed/', { image: blob, text: embedForm.text.value, password });
       const bits = res.headers.get('X-Watermark-Bits');
       const ext = res.headers.get('X-Image-Format') || 'png';
       const out = await res.blob();
@@ -342,7 +343,7 @@
 
     run(extractForm, async file => {
       const { blob, note } = await fitForUpload(file, { resize: false });
-      const res = await post('api/extract', {
+      const res = await post('api/extract/', {
         image: blob, bits: extractForm.bits.value, password: extractForm.password.value,
       });
       const { text } = await res.json();

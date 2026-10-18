@@ -41,7 +41,10 @@ def watermarker(password: int) -> WaterMark:
     return WaterMark(password_img=password, password_wm=password)
 
 
+# The trailing-slash aliases serve the page when it is proxied under a host with `trailingSlash: true`
+# (projects.yanbc.info/blind-watermark/), which redirects extension-less paths to their slash form.
 @app.post('/api/embed')
+@app.post('/api/embed/', include_in_schema=False)
 def embed(image: Annotated[UploadFile, File()],
           text: Annotated[str, Form(min_length=1, max_length=2000)],
           password: Annotated[int, Form()]):
@@ -81,6 +84,7 @@ def embed(image: Annotated[UploadFile, File()],
 
 
 @app.post('/api/extract')
+@app.post('/api/extract/', include_in_schema=False)
 def extract(image: Annotated[UploadFile, File()],
             bits: Annotated[int, Form(gt=0)],
             password: Annotated[int, Form()]):
