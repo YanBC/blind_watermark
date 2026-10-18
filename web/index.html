@@ -234,19 +234,32 @@
       });
     }
 
-    // Re-encode as JPEG at full resolution when the file is over the upload limit.
-    async function fitForUpload(file) {
+    // Re-encode as JPEG when the file is over the upload limit. Images over the pixel cap are scaled down
+    // when embedding; extraction can't resize, since the watermark is tied to the image's block grid.
+    async function fitForUpload(file, { resize }) {
       const bmp = await createImageBitmap(file);
-      if (bmp.width * bmp.height > MAX_PIXELS) {
-        throw new Error(`Image is ${(bmp.width * bmp.height / 1e6).toFixed(1)} MP; keep it under ${MAX_PIXELS / 1e6} MP.`);
+      const pixels = bmp.width * bmp.height;
+      let { width, height } = bmp;
+      let note = '';
+      if (pixels > MAX_PIXELS) {
+        if (!resize) {
+          throw new Error(`Image is ${(pixels / 1e6).toFixed(1)} MP, over the ${MAX_PIXELS / 1e6} MP limit. ` +
+                          'Watermarked images from this page are always within it.');
+        }
+        const scale = Math.sqrt(MAX_PIXELS * 0.99 / pixels);
+        width = Math.floor(bmp.width * scale); height = Math.floor(bmp.height * scale);
+        note = ` (resized from ${bmp.width}×${bmp.height} to ${width}×${height} to fit the ${MAX_PIXELS / 1e6} MP limit)`;
+      } else if (file.size <= MAX_UPLOAD) {
+        return { blob: file, note };
       }
-      if (file.size <= MAX_UPLOAD) return { blob: file, note: '' };
       const canvas = document.createElement('canvas');
-      canvas.width = bmp.width; canvas.height = bmp.height;
-      canvas.getContext('2d').drawImage(bmp, 0, 0);
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bmp, 0, 0, width, height);
       for (const q of [0.95, 0.92, 0.88]) {
         const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
-        if (blob && blob.size <= MAX_UPLOAD) return { blob, note: ' (compressed to fit the 4.5 MB upload limit)' };
+        if (blob && blob.size <= MAX_UPLOAD) return { blob, note: note || ' (compressed to fit the 4.5 MB upload limit)' };
       }
       throw new Error('Image is too large to upload, even compressed. Try a smaller one.');
     }
@@ -295,7 +308,7 @@
     let downloadUrl = null;
 
     run(embedForm, async file => {
-      const { blob, note } = await fitForUpload(file);
+      const { blob, note } = await fitForUpload(file, { resize: true });
       const password = embedForm.password.value;
       const res = await post('api/embed', { image: blob, text: embedForm.text.value, password });
       const bits = res.headers.get('X-Watermark-Bits');
@@ -328,7 +341,7 @@
     });
 
     run(extractForm, async file => {
-      const { blob, note } = await fitForUpload(file);
+      const { blob, note } = await fitForUpload(file, { resize: false });
       const res = await post('api/extract', {
         image: blob, bits: extractForm.bits.value, password: extractForm.password.value,
       });
