@@ -162,8 +162,12 @@
           <input id="embed-dpi" name="dpi" type="number" min="72" max="300" step="1" value="144">
           <p class="hint">One ID is repeated across all pages. Save this DPI for extraction.</p>
           <p class="hint pdf-limits"></p>
-          <p class="hint">PDF output is image-based: selectable text, vectors, links and forms are flattened.
-            White areas may show faint texture. Print/scan survival has not been tested.</p>
+          <p class="hint"><strong>PDF quality tradeoff:</strong> Each page becomes a fixed-resolution image.
+            Text and SVG/vector graphics lose their vector sharpness and may look blurry or pixelated when zoomed in.
+            Text is no longer selectable; links and forms are flattened.</p>
+          <p class="hint">The default is 144 DPI. Higher DPI preserves more detail but increases file size,
+            memory use and processing time. Keep your original PDF.</p>
+          <p class="hint">White areas may show faint texture. Print/scan survival has not been tested.</p>
         </div>
         <button class="primary" type="submit">Embed watermark</button>
         <p class="status" role="status" aria-live="polite"></p>
