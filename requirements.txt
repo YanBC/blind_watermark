@@ -5,3 +5,6 @@ PyWavelets
 # Web app (app.py)
 fastapi
 python-multipart
+# PDF support lives in the package, so it is included in web deployments.
+pypdfium2>=4.30,<6
+reportlab>=4.2,<5
