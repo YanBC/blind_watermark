@@ -31,6 +31,7 @@ setup(name='blind_watermark',
       packages=find_packages(),
       platforms=['linux', 'windows', 'macos'],
       install_requires=['numpy', 'opencv-python', 'PyWavelets'],
+      extras_require={'pdf': ['pypdfium2>=4.30,<6', 'reportlab>=4.2,<5']},
       zip_safe=False,
       entry_points={
           'console_scripts': [

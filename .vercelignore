@@ -1,6 +1,9 @@
 # Not needed by the web app (app.py + web/ + blind_watermark/)
 docs/
 examples/
+tests/
+output/
+tmp/
 .github/
 .travis.yml
 res.jpg

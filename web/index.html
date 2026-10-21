@@ -129,7 +129,7 @@
 
     <header>
       <h1>Blind Watermark.</h1>
-      <p class="intro">Hide text inside an image, invisibly. Recover it later with the password.</p>
+      <p class="intro">Hide text in an image, or repeat one document ID across a PDF's pages.</p>
     </header>
 
     <div class="tabs" role="tablist" aria-label="Mode">
@@ -140,10 +140,10 @@
     <section class="card" id="panel-embed" role="tabpanel" aria-labelledby="tab-embed">
       <form id="embed-form">
         <div>
-          <span class="label">Image</span>
+          <span class="label">Image or PDF</span>
           <label class="drop">
-            <input type="file" name="image" accept="image/*" required>
-            <span class="drop-text">Drop an image here, or <strong>choose a file</strong></span>
+            <input type="file" name="image" accept="image/*,application/pdf,.pdf" required>
+            <span class="drop-text">Drop an image or PDF here, or <strong>choose a file</strong></span>
           </label>
         </div>
         <div>
@@ -157,6 +157,14 @@
             <p class="hint">A whole number. You need it to extract.</p>
           </div>
         </div>
+        <div class="pdf-options" hidden>
+          <label class="label" for="embed-dpi">PDF rendering DPI</label>
+          <input id="embed-dpi" name="dpi" type="number" min="72" max="300" step="1" value="144">
+          <p class="hint">One ID is repeated across all pages. Save this DPI for extraction.</p>
+          <p class="hint pdf-limits"></p>
+          <p class="hint">PDF output is image-based: selectable text, vectors, links and forms are flattened.
+            White areas may show faint texture. Print/scan survival has not been tested.</p>
+        </div>
         <button class="primary" type="submit">Embed watermark</button>
         <p class="status" role="status" aria-live="polite"></p>
       </form>
@@ -164,13 +172,17 @@
       <div class="result" id="embed-result" hidden>
         <h2>Done.</h2>
         <img id="embed-preview" alt="Watermarked image">
+        <p class="hint" id="embed-pdf-summary" hidden></p>
         <dl class="keep">
           <dt>Bit length</dt><dd id="embed-bits"></dd>
           <dt>Password</dt><dd id="embed-pw"></dd>
+          <dt class="pdf-recipe" hidden>DPI</dt><dd class="pdf-recipe" id="embed-result-dpi" hidden></dd>
+          <dt class="pdf-recipe" hidden>Pages</dt><dd class="pdf-recipe" id="embed-pages" hidden></dd>
         </dl>
-        <p class="hint">Keep both. Extraction needs the bit length and the same password.</p>
+        <p class="hint">Keep the bit length and password. PDF extraction also needs the same DPI.</p>
         <div class="actions" style="margin-top: 18px">
           <a class="primary" id="embed-download" download>Download</a>
+          <a class="link-btn" id="embed-settings" download="watermark-settings.json" hidden>Save extraction settings</a>
           <button class="link-btn" type="button" id="embed-try">Try extracting ›</button>
         </div>
         <p class="cli"><code id="embed-code"></code></p>
@@ -180,10 +192,10 @@
     <section class="card" id="panel-extract" role="tabpanel" aria-labelledby="tab-extract" hidden>
       <form id="extract-form">
         <div>
-          <span class="label">Watermarked image</span>
+          <span class="label">Watermarked image or PDF</span>
           <label class="drop">
-            <input type="file" name="image" accept="image/*" required>
-            <span class="drop-text">Drop an image here, or <strong>choose a file</strong></span>
+            <input type="file" name="image" accept="image/*,application/pdf,.pdf" required>
+            <span class="drop-text">Drop an image or PDF here, or <strong>choose a file</strong></span>
           </label>
         </div>
         <div class="row">
@@ -196,29 +208,56 @@
             <input id="extract-password" name="password" type="number" inputmode="numeric" min="0" max="4294967295" step="1" required>
           </div>
         </div>
+        <div class="pdf-options" hidden>
+          <label class="label" for="extract-dpi">PDF rendering DPI</label>
+          <input id="extract-dpi" name="dpi" type="number" min="72" max="300" step="1" value="144">
+          <p class="hint">Use the embedding DPI, password and bit length. Returns one candidate document ID.
+            Conflicting page readings produce no document ID.</p>
+          <p class="hint pdf-limits"></p>
+        </div>
         <button class="primary" type="submit">Extract watermark</button>
         <p class="status" role="status" aria-live="polite"></p>
       </form>
 
       <div class="result" id="extract-result" hidden>
-        <h2>Hidden text</h2>
+        <h2 id="extract-heading">Hidden text</h2>
         <p class="extracted" id="extract-text"></p>
-        <p class="hint">A wrong password or bit length gives garbled text rather than an error.</p>
+        <p class="hint" id="extract-diagnostics"></p>
+        <p class="hint" id="extract-notice">A wrong password or bit length gives garbled text rather than an error.</p>
       </div>
     </section>
 
     <footer>
       Built on <a href="https://github.com/guofei9987/blind_watermark">blind_watermark</a>.
-      Images are processed in memory and never stored.
+      No permanent copy of your upload or output is kept.
     </footer>
   </main>
 
   <script>
     // Vercel Functions accept request bodies up to 4.5 MB; the server caps images at 12.5 MP.
-    const MAX_UPLOAD = 4.3e6;
-    const MAX_PIXELS = 12.5e6;
+    let MAX_UPLOAD = 4.3e6;
+    let MAX_PIXELS = 12.5e6;
+    let pdfLimits = { max_pages: 5, max_page_pixels: 4e6, max_total_pixels: 10e6 };
     const files = new Map();   // form -> selected File (from the picker or a drop)
-    let lastEmbed = null;      // { file, bits, password, password_wm } for "Try extracting"
+    let lastEmbed = null;      // { file, bits, password, dpi } for "Try extracting"
+    const previewUrls = new Map();
+    const isPdf = file => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    function showLimits() {
+      for (const hint of document.querySelectorAll('.pdf-limits')) {
+        hint.textContent = `Limits: ${(MAX_UPLOAD / 1e6).toFixed(1)} MB upload, ${pdfLimits.max_pages} pages, ` +
+          `${pdfLimits.max_page_pixels / 1e6} MP per page and ${pdfLimits.max_total_pixels / 1e6} MP total at your chosen DPI. ` +
+          'Larger PDFs need the CLI or a host configured for larger files.';
+      }
+    }
+    showLimits();
+    const configReady = fetch('api/config/').then(async res => {
+      if (!res.ok) return;
+      const config = await res.json();
+      MAX_UPLOAD = config.max_upload_bytes;
+      MAX_PIXELS = config.max_image_pixels;
+      pdfLimits = config.pdf;
+      showLimits();
+    }).catch(() => {}); // Conservative defaults if the configuration request fails.
 
     // Theme: "auto" clears the override so the page follows the system setting.
     const themeButtons = [...document.querySelectorAll('.theme button')];
@@ -261,38 +300,66 @@
 
     // Drop zones
     function setFile(form, file) {
+      const status = form.querySelector('.status');
+      if (!isPdf(file) && !file.type.startsWith('image/')) {
+        status.className = 'status error'; status.textContent = 'Choose an image or PDF file.';
+        return;
+      }
       files.set(form, file);
+      form.querySelector('input[type="file"]').required = false;
+      status.className = 'status'; status.textContent = '';
+      document.getElementById(form.id === 'embed-form' ? 'embed-result' : 'extract-result').hidden = true;
+      const pdf = isPdf(file);
+      form.querySelector('.pdf-options').hidden = !pdf;
+      form.dpi.required = pdf;
+      form.dpi.disabled = !pdf;
+      if (form.id === 'embed-form') {
+        form.querySelector('label[for="embed-text"]').textContent = pdf ? 'Document ID' : 'Watermark text';
+      }
       const drop = form.querySelector('.drop');
       drop.querySelector('img')?.remove();
-      const img = document.createElement('img');
-      img.alt = '';
-      img.src = URL.createObjectURL(file);
-      drop.prepend(img);
+      if (previewUrls.has(form)) URL.revokeObjectURL(previewUrls.get(form));
+      if (!pdf) {
+        const img = document.createElement('img');
+        img.alt = '';
+        img.src = URL.createObjectURL(file);
+        previewUrls.set(form, img.src);
+        drop.prepend(img);
+      }
       drop.querySelector('.drop-text').innerHTML = '';
       drop.querySelector('.drop-text').append(file.name, ' · ', Object.assign(document.createElement('strong'), { textContent: 'change' }));
     }
     for (const form of document.querySelectorAll('form')) {
       const drop = form.querySelector('.drop');
       const input = drop.querySelector('input');
+      form.dpi.disabled = true;
       input.addEventListener('change', () => input.files[0] && setFile(form, input.files[0]));
       drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
       drop.addEventListener('dragleave', () => drop.classList.remove('over'));
       drop.addEventListener('drop', e => {
         e.preventDefault(); drop.classList.remove('over');
         const file = e.dataTransfer.files[0];
-        if (file && file.type.startsWith('image/')) { setFile(form, file); input.required = false; }
+        if (file) setFile(form, file);
       });
     }
 
     // Re-encode as JPEG when the file is over the upload limit. Images over the pixel cap are scaled down
     // when embedding; extraction can't resize, since the watermark is tied to the image's block grid.
     async function fitForUpload(file, { resize }) {
+      await configReady;
+      if (isPdf(file)) {
+        if (file.size > MAX_UPLOAD) {
+          throw new Error(`PDF exceeds the ${(MAX_UPLOAD / 1e6).toFixed(1)} MB upload limit. Use the CLI or a host configured for larger PDFs.`);
+        }
+        return { blob: file, note: '' }; // Never resize or recompress a PDF in the browser.
+      }
       const bmp = await createImageBitmap(file);
       const pixels = bmp.width * bmp.height;
       let { width, height } = bmp;
       let note = '';
       if (pixels > MAX_PIXELS) {
         if (!resize) {
+          bmp.close();
           throw new Error(`Image is ${(pixels / 1e6).toFixed(1)} MP, over the ${MAX_PIXELS / 1e6} MP limit. ` +
                           'Watermarked images from this page are always within it.');
         }
@@ -300,6 +367,7 @@
         width = Math.floor(bmp.width * scale); height = Math.floor(bmp.height * scale);
         note = ` (resized from ${bmp.width}×${bmp.height} to ${width}×${height} to fit the ${MAX_PIXELS / 1e6} MP limit)`;
       } else if (file.size <= MAX_UPLOAD) {
+        bmp.close();
         return { blob: file, note };
       }
       const canvas = document.createElement('canvas');
@@ -307,9 +375,10 @@
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(bmp, 0, 0, width, height);
+      bmp.close();
       for (const q of [0.95, 0.92, 0.88]) {
         const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
-        if (blob && blob.size <= MAX_UPLOAD) return { blob, note: note || ' (compressed to fit the 4.5 MB upload limit)' };
+        if (blob && blob.size <= MAX_UPLOAD) return { blob, note: note || ` (compressed to fit the ${(MAX_UPLOAD / 1e6).toFixed(1)} MB upload limit)` };
       }
       throw new Error('Image is too large to upload, even compressed. Try a smaller one.');
     }
@@ -326,8 +395,8 @@
           if (typeof err.detail === 'string') msg = err.detail;
           else if (Array.isArray(err.detail)) msg = 'Check the form: ' + err.detail.map(d => d.loc.at(-1)).join(', ') + '.';
         } catch {}
-        if (res.status === 413 && msg.startsWith('Request failed')) msg = 'Image is too large to upload.';
-        if (res.status === 504) msg = 'Timed out. Try a smaller image.';
+        if (res.status === 413 && msg.startsWith('Request failed')) msg = 'File exceeds the hosting upload or response limit. Use the CLI for larger PDFs.';
+        if (res.status === 504) msg = 'Timed out. Try a smaller file, or use the PDF CLI.';
         throw new Error(msg);
       }
       return res;
@@ -339,10 +408,11 @@
         const status = form.querySelector('.status');
         const button = form.querySelector('button[type="submit"]');
         const file = files.get(form);
-        if (!file) { status.className = 'status error'; status.textContent = 'Choose an image first.'; return; }
+        if (!file) { status.className = 'status error'; status.textContent = 'Choose an image or PDF first.'; return; }
+        document.getElementById(form.id === 'embed-form' ? 'embed-result' : 'extract-result').hidden = true;
         button.disabled = true;
         status.className = 'status';
-        status.textContent = 'Working… large images take a few seconds.';
+        status.textContent = isPdf(file) ? 'Working… rendering and processing PDF pages.' : 'Working… large images take a few seconds.';
         try {
           status.textContent = await work(file) || '';
         } catch (err) {
@@ -357,28 +427,59 @@
     const embedForm = document.getElementById('embed-form');
     const extractForm = document.getElementById('extract-form');
     let downloadUrl = null;
+    let settingsUrl = null;
 
     run(embedForm, async file => {
       const { blob, note } = await fitForUpload(file, { resize: true });
       const password = embedForm.password.value;
-      const res = await post('api/embed/', { image: blob, text: embedForm.text.value, password });
+      const pdf = isPdf(file);
+      const dpi = embedForm.dpi.value;
+      if (pdf && new TextEncoder().encode(embedForm.text.value).length > 256) {
+        throw new Error('Document ID must be at most 256 UTF-8 bytes.');
+      }
+      const res = await post(pdf ? 'api/pdf/embed/' : 'api/embed/', {
+        [pdf ? 'pdf' : 'image']: blob, text: embedForm.text.value, password, ...(pdf ? { dpi } : {}),
+      });
       const bits = res.headers.get('X-Watermark-Bits');
-      const ext = res.headers.get('X-Image-Format') || 'png';
+      const ext = pdf ? 'pdf' : res.headers.get('X-Image-Format') || 'png';
+      const savedDpi = res.headers.get('X-Watermark-DPI');
+      const pages = res.headers.get('X-Document-Pages');
       const out = await res.blob();
       if (downloadUrl) URL.revokeObjectURL(downloadUrl);
       downloadUrl = URL.createObjectURL(out);
       const name = file.name.replace(/\.[^.]+$/, '') + '-watermarked.' + ext;
 
-      document.getElementById('embed-preview').src = downloadUrl;
+      const preview = document.getElementById('embed-preview');
+      preview.hidden = pdf;
+      if (pdf) preview.removeAttribute('src');
+      else preview.src = downloadUrl;
+      const summary = document.getElementById('embed-pdf-summary');
+      summary.hidden = !pdf;
+      summary.textContent = `${pages} pages carry the same document ID. Download the image-based PDF below.`;
       document.getElementById('embed-bits').textContent = bits;
       document.getElementById('embed-pw').textContent = password;
+      for (const field of document.querySelectorAll('.pdf-recipe')) field.hidden = !pdf;
+      document.getElementById('embed-result-dpi').textContent = savedDpi;
+      document.getElementById('embed-pages').textContent = pages;
+      const settings = document.getElementById('embed-settings');
+      settings.hidden = !pdf;
+      if (settingsUrl) URL.revokeObjectURL(settingsUrl);
+      if (pdf) {
+        settingsUrl = URL.createObjectURL(new Blob([JSON.stringify({
+          format: 'blind-watermark-pdf', version: 1, bits: Number(bits), dpi: Number(savedDpi),
+          note: 'Keep the numeric password separately; it is not included in this file.',
+        }, null, 2)], { type: 'application/json' }));
+        settings.href = settingsUrl;
+      }
       const dl = document.getElementById('embed-download');
       dl.href = downloadUrl; dl.download = name;
-      document.getElementById('embed-code').textContent =
-        `WaterMark(password_img=${password}, password_wm=${password}).extract('${name}', wm_shape=${bits}, mode='str')`;
+      document.getElementById('embed-code').textContent = pdf
+        ? `python -m examples.pdf_watermark extract watermarked.pdf --bits ${bits} --dpi ${savedDpi} --password ${password}`
+        : `WaterMark(password_img=${password}, password_wm=${password}).extract('${name}', wm_shape=${bits}, mode='str')`;
       document.getElementById('embed-result').hidden = false;
-      lastEmbed = { file: new File([out], name, { type: out.type }), bits, password };
-      return `Embedded ${bits} bits as ${ext.toUpperCase()}${note}.`;
+      lastEmbed = { file: new File([out], name, { type: out.type }), bits, password, dpi: savedDpi };
+      return pdf ? `One document ID embedded across ${pages} pages (${bits} bits, ${savedDpi} DPI).`
+        : `Embedded ${bits} bits as ${ext.toUpperCase()}${note}.`;
     });
 
     document.getElementById('embed-try').addEventListener('click', () => {
@@ -387,17 +488,29 @@
       extractForm.image.required = false;
       extractForm.bits.value = lastEmbed.bits;
       extractForm.password.value = lastEmbed.password;
+      if (lastEmbed.dpi) extractForm.dpi.value = lastEmbed.dpi;
       selectTab(document.getElementById('tab-extract'));
       document.getElementById('tab-extract').focus();
     });
 
     run(extractForm, async file => {
       const { blob, note } = await fitForUpload(file, { resize: false });
-      const res = await post('api/extract/', {
-        image: blob, bits: extractForm.bits.value, password: extractForm.password.value,
+      const pdf = isPdf(file);
+      const res = await post(pdf ? 'api/pdf/extract/' : 'api/extract/', {
+        [pdf ? 'pdf' : 'image']: blob, bits: extractForm.bits.value, password: extractForm.password.value,
+        ...(pdf ? { dpi: extractForm.dpi.value } : {}),
       });
-      const { text } = await res.json();
-      document.getElementById('extract-text').textContent = text;
+      const result = await res.json();
+      document.getElementById('extract-heading').textContent = pdf ? 'Candidate document ID' : 'Hidden text';
+      document.getElementById('extract-text').textContent = pdf ? result.document_id ??
+        (result.status === 'conflict' ? 'Conflicting page readings. No single document ID returned.'
+          : 'No readable document ID. Check the password, bit length and DPI.') : result.text;
+      document.getElementById('extract-diagnostics').textContent = pdf
+        ? `Status: ${result.status}. ${result.agreeing_pages} of ${result.pages} pages agree; ` +
+          `${result.readable_pages} readable; ${result.failed_pages.length} undecodable.` +
+          (result.status === 'partial' ? ' The candidate could not be read from every page.' : '') : '';
+      document.getElementById('extract-notice').textContent = pdf ? result.notice
+        : 'A wrong password or bit length gives garbled text rather than an error.';
       document.getElementById('extract-result').hidden = false;
       return note ? `Extracted${note}.` : '';
     });
